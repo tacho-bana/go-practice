@@ -15,7 +15,12 @@ type PageData struct {
 }
 
 // テンプレートのキャッシュ
-var templates = template.Must(template.ParseFiles(filepath.Join("templates", "template.html")))
+var templates *template.Template
+
+func init() {
+	// テンプレートのパスを指定してパース
+	templates = template.Must(template.ParseFiles(filepath.Join("templates", "template.html")))
+}
 
 // ハンドラ関数
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -52,14 +57,17 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to open log file:", err)
 	}
+	defer logFile.Close()
 	log.SetOutput(logFile)
+
+	log.Println("Logging to file started")
 
 	// 静的ファイルのサービング
 	staticDir := filepath.Join("static")
 	fs := http.FileServer(http.Dir(staticDir))
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
 	// ルートハンドラの設定
-	http.Handle("/static/", http.StripPrefix("/static/", fs))
 	http.HandleFunc("/", handler)
 
 	// ログミドルウェアを使用
