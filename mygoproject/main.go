@@ -1,34 +1,88 @@
 package main
 
 import (
+	"encoding/gob"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/gorilla/sessions"
 )
 
+// セッション用のキー
+var store = sessions.NewCookieStore([]byte("something-very-secret"))
+
+// ページデータの構造体
 type PageData struct {
-	Title   string
-	Content string
+	Title       string
+	Content     string
+	Error       string
+	SessionData map[string]interface{}
 }
 
 // テンプレートのキャッシュ
 var templates *template.Template
 
 func init() {
+	// セッションに保存するために、map[string]interface{}のエンコードを登録
+	gob.Register(map[string]interface{}{})
+
 	// テンプレートのパスを指定してパース
-	templates = template.Must(template.ParseFiles(filepath.Join("templates", "template.html")))
+	templates = template.Must(template.ParseGlob(filepath.Join("templates", "*.html")))
 }
 
-// ハンドラ関数
-func handler(w http.ResponseWriter, r *http.Request) {
-	data := PageData{
-		Title:   "Hello, Go!",
-		Content: "Welcome to the Go web server.",
+// セッションデータをmap[string]interface{}に変換するヘルパー関数
+func convertSessionValues(values map[interface{}]interface{}) map[string]interface{} {
+	converted := make(map[string]interface{})
+	for key, value := range values {
+		if strKey, ok := key.(string); ok {
+			converted[strKey] = value
+		}
 	}
-	err := templates.Execute(w, data)
+	return converted
+}
+
+// メインページのハンドラ
+func handler(w http.ResponseWriter, r *http.Request) {
+	session, _ := store.Get(r, "session-name")
+
+	data := PageData{
+		Title:       "Hello, Go!",
+		Content:     "Welcome to the Go web server.",
+		SessionData: convertSessionValues(session.Values),
+	}
+	err := templates.ExecuteTemplate(w, "template.html", data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// フォームページのハンドラ
+func formHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		session, _ := store.Get(r, "session-name")
+		session.Values["name"] = r.FormValue("name")
+		session.Values["message"] = r.FormValue("message")
+		session.Save(r, w)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	err := templates.ExecuteTemplate(w, "form.html", nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// エラーハンドラ
+func errorHandler(w http.ResponseWriter, r *http.Request) {
+	data := PageData{
+		Title:   "Error",
+		Content: "Something went wrong!",
+	}
+	err := templates.ExecuteTemplate(w, "error.html", data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -69,6 +123,8 @@ func main() {
 
 	// ルートハンドラの設定
 	http.HandleFunc("/", handler)
+	http.HandleFunc("/form", formHandler)
+	http.HandleFunc("/error", errorHandler)
 
 	// ログミドルウェアを使用
 	loggedRouter := loggingMiddleware(http.DefaultServeMux)
