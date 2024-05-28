@@ -12,7 +12,6 @@ import (
 	"github.com/gorilla/sessions"
 )
 
-// セッション用のキー
 var store = sessions.NewCookieStore([]byte("something-very-secret"))
 
 // ページデータの構造体
